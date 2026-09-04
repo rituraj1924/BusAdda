@@ -1,17 +1,20 @@
-﻿import type { Metadata, Viewport } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 
 export const metadata: Metadata = {
-  title: "Bus Journey — Immersive Experience",
+  title: "BusAdda — Immersive Bus Journey Experience",
   description: "An immersive, realistic passenger bus journey experience with ambient sounds and cinematic video.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Bus Journey",
+    title: "BusAdda",
+  },
+  verification: {
+    google: "6ZbnNzb4XzxuZ5LF7gztq3EdiUfaDquact12RHx0qQk",
   },
 };
 
