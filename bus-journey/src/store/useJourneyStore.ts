@@ -30,10 +30,10 @@ export const PLAYLISTS: Playlist[] = [
 ];
 
 export const VIEWS: { id: ViewId; label: string; hindi: string; emoji: string; clip: number }[] = [
-  { id: "platform",  label: "Platform",    hindi: "प्लेटफॉर्म", emoji: "🚉", clip: 0 },
-  { id: "boarding",  label: "Boarding",    hindi: "सवारी",      emoji: "🎟️", clip: 1 },
   { id: "driver",    label: "Driver POV",  hindi: "आगे से",     emoji: "🚌", clip: 2 },
   { id: "window",    label: "Window Seat", hindi: "खिड़की से",  emoji: "🪟", clip: 3 },
+  { id: "platform",  label: "Platform",    hindi: "प्लेटफॉर्म", emoji: "🚉", clip: 0 },
+  { id: "boarding",  label: "Boarding",    hindi: "सवारी",      emoji: "🎟️", clip: 1 },
 ];
 
 interface JourneyState {
@@ -67,7 +67,7 @@ interface JourneyState {
 
 export const useJourneyStore = create<JourneyState>((set) => ({
   mode: "day",
-  currentView: "platform",
+  currentView: "driver",
   playlist: "driver",
   customVideoId: "",
   videoMuted: false,
