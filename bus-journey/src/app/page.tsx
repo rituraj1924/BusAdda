@@ -6,6 +6,7 @@ import MuteControls from "@/components/MuteControls";
 import MusicPanel from "@/components/MusicPanel";
 import CinematicVignette from "@/components/CinematicVignette";
 import ViewSwitcher from "@/components/ViewSwitcher";
+import InAppBrowserBanner from "@/components/InAppBrowserBanner";
 import { useJourneyStore, VIEWS } from "@/store/useJourneyStore";
 
 export default function Home() {
@@ -19,6 +20,9 @@ export default function Home() {
 
       {/* Cinematic vignette */}
       <CinematicVignette />
+
+      {/* In-app browser detection banner (only shown in Instagram/FB/TikTok WebViews) */}
+      <InAppBrowserBanner />
 
       {/* Top row: Day/Night toggle + Mute controls */}
       <div className="absolute top-0 left-0 right-0 z-30 flex items-center justify-between px-4 pt-4 safe-top">

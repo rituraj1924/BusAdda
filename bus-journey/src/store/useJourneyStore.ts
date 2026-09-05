@@ -45,6 +45,7 @@ interface JourneyState {
   videoVolume: number;          // 0–1, controls bus ambient audio volume
   musicMuted: boolean;
   musicPlaying: boolean;
+  hasInteractedMusic: boolean;
   isModeTransitioning: boolean;
   nowPlayingTitle: string;
   nowPlayingVideoId: string;
@@ -74,6 +75,7 @@ export const useJourneyStore = create<JourneyState>((set) => ({
   videoVolume: 0.8,
   musicMuted: false,
   musicPlaying: false,
+  hasInteractedMusic: false,
   isModeTransitioning: false,
   nowPlayingTitle: "Bus Driver Playlist",
   nowPlayingVideoId: "5MIGQBpVeqs",
@@ -82,11 +84,13 @@ export const useJourneyStore = create<JourneyState>((set) => ({
   setView: (view) => set({ currentView: view }),
   setPlaylist: (id) => {
     const pl = PLAYLISTS.find((p) => p.id === id);
-    set({
+    set((s) => ({
       playlist: id,
       nowPlayingVideoId: pl ? pl.defaultVideoId : "",
       nowPlayingTitle: pl ? pl.label : "",
-    });
+      // Immediately trigger playback of the new playlist if user interacted before
+      musicPlaying: s.hasInteractedMusic ? true : s.musicPlaying,
+    }));
   },
   setCustomVideoId: (id) =>
     set({
@@ -94,13 +98,14 @@ export const useJourneyStore = create<JourneyState>((set) => ({
       nowPlayingVideoId: id,
       playlist: "custom",
       musicPlaying: true,
+      hasInteractedMusic: true,
       nowPlayingTitle: "Custom YouTube Song",
     }),
   toggleVideoMute: () => set((s) => ({ videoMuted: !s.videoMuted })),
   setVideoVolume: (v) => set({ videoVolume: v, videoMuted: v === 0 }),
   toggleMusicMute: () => set((s) => ({ musicMuted: !s.musicMuted })),
-  toggleMusicPlaying: () => set((s) => ({ musicPlaying: !s.musicPlaying })),
-  setMusicPlaying: (playing) => set({ musicPlaying: playing }),
+  toggleMusicPlaying: () => set((s) => ({ musicPlaying: !s.musicPlaying, hasInteractedMusic: true })),
+  setMusicPlaying: (playing) => set((s) => ({ musicPlaying: playing, hasInteractedMusic: s.hasInteractedMusic || playing })),
   setNowPlayingTitle: (title) => set({ nowPlayingTitle: title }),
   setNowPlayingVideoId: (id) => set({ nowPlayingVideoId: id }),
   toggleVideoPreview: () => set((s) => ({ showVideoPreview: !s.showVideoPreview })),

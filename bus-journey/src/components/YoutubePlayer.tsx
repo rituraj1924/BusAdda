@@ -5,6 +5,8 @@ import { useJourneyStore, PLAYLISTS } from "@/store/useJourneyStore";
 interface YTPlayerInstance {
   playVideo: () => void;
   pauseVideo: () => void;
+  stopVideo: () => void;
+  destroy: () => void;
   mute: () => void;
   unMute: () => void;
   setVolume: (v: number) => void;
@@ -28,6 +30,7 @@ declare global {
         options: {
           height: string;
           width: string;
+          videoId?: string;
           playerVars: Record<string, unknown>;
           events: {
             onReady?: (e: YTEvent) => void;
@@ -72,6 +75,7 @@ export default function YoutubePlayer() {
     customVideoId,
     musicMuted,
     musicPlaying,
+    hasInteractedMusic,
     nowPlayingVideoId,
     nowPlayingTitle,
     showVideoPreview,
@@ -82,13 +86,15 @@ export default function YoutubePlayer() {
     toggleMusicPlaying,
   } = useJourneyStore();
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YTPlayerInstance | null>(null);
   const readyRef = useRef(false);
   const queueRef = useRef<(() => void) | null>(null);
-  const playlistRef = useRef(playlist);
   const mutedRef = useRef(musicMuted);
   const playingRef = useRef(musicPlaying);
   const skippingRef = useRef(false);
+  const prevPlaylistRef = useRef<string | null>(null);
+  const prevCustomIdRef = useRef<string | null>(null);
 
   // Track failed video thumbnail loads purely by video ID (no cascading setState in effects)
   const [failedVideoIds, setFailedVideoIds] = useState<Record<string, boolean>>({});
@@ -111,99 +117,154 @@ export default function YoutubePlayer() {
     nowPlayingVideoId || currentPl?.defaultVideoId || "5MIGQBpVeqs";
   const imgError = failedVideoIds[activeVideoId] === true;
 
-  // Init player once on mount
-  useEffect(() => {
-    loadYTApi().then(() => {
-      if (playerRef.current) return;
+  // Initialize or cleanly recreate the YouTube Player
+  const initOrSwitchPlayer = useCallback(
+    (targetPlaylist: string, targetCustomId: string, autoPlay: boolean) => {
+      // 1. Immediately silence and destroy any previous player
+      if (playerRef.current) {
+        try {
+          playerRef.current.stopVideo();
+        } catch {}
+        try {
+          playerRef.current.destroy();
+        } catch {}
+        playerRef.current = null;
+        readyRef.current = false;
+      }
+
+      // 2. Reset DOM element inside container
+      if (containerRef.current) {
+        containerRef.current.innerHTML = '<div id="yt-engine-disc" style="width:100%;height:100%"></div>';
+      }
+
       if (!window.YT?.Player) return;
 
-      const pl = PLAYLISTS.find((p) => p.id === playlist) ?? PLAYLISTS[0];
+      const onReadyHandler = (e: YTEvent) => {
+        readyRef.current = true;
+        e.target.setVolume(mutedRef.current ? 0 : 75);
+        if (autoPlay) {
+          try {
+            e.target.playVideo();
+          } catch {}
+        }
+        try {
+          const d = e.target.getVideoData();
+          if (d?.video_id) setNowPlayingVideoId(d.video_id);
+          if (d?.title) setNowPlayingTitle(d.title);
+        } catch {}
+        if (queueRef.current) {
+          queueRef.current();
+          queueRef.current = null;
+        }
+      };
 
-      playerRef.current = new window.YT.Player("yt-engine-disc", {
-        height: "100%",
-        width: "100%",
-        playerVars: {
-          list: pl.youtubeListId,
-          listType: "playlist",
-          autoplay: 0,
-          controls: 1,
-          disablekb: 1,
-          fs: 0,
-          rel: 0,
-          modestbranding: 1,
-          playsinline: 1,
-          enablejsapi: 1,
-          origin: window.location.origin,
-        },
-        events: {
-          onReady: (e: YTEvent) => {
-            readyRef.current = true;
-            e.target.setVolume(mutedRef.current ? 0 : 75);
-            try {
-              const d = e.target.getVideoData();
-              if (d?.video_id) setNowPlayingVideoId(d.video_id);
-              if (d?.title) setNowPlayingTitle(d.title);
-            } catch {
-              // Ignore
-            }
-            if (queueRef.current) {
-              queueRef.current();
-              queueRef.current = null;
-            }
-          },
-          onStateChange: (e: YTEvent) => {
-            try {
-              const d = e.target.getVideoData();
-              if (d?.video_id) setNowPlayingVideoId(d.video_id);
-              if (d?.title) setNowPlayingTitle(d.title);
-            } catch {
-              // Ignore
-            }
+      const onStateChangeHandler = (e: YTEvent) => {
+        try {
+          const d = e.target.getVideoData();
+          if (d?.video_id) setNowPlayingVideoId(d.video_id);
+          if (d?.title) setNowPlayingTitle(d.title);
+        } catch {}
 
-            if (e.data === 1) {
-              // PLAYING
-              skippingRef.current = false;
-              setMusicPlaying(true);
-            } else if (e.data === 2) {
-              // PAUSED — ignore brief buffering pause on skip
-              if (!skippingRef.current) setMusicPlaying(false);
-            } else if (e.data === 0) {
-              // ENDED
-              setMusicPlaying(false);
-            }
-          },
-          onError: (e: YTEvent) => {
-            // Error 101/150: video embedding blocked by copyright owner → auto skip
-            if (e.data === 101 || e.data === 150) {
-              safe(() => playerRef.current?.nextVideo());
-            }
-          },
-        },
-      });
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+        if (e.data === 1) {
+          // PLAYING
+          skippingRef.current = false;
+          setMusicPlaying(true);
+        } else if (e.data === 2) {
+          // PAUSED — ignore brief buffering pause on skip
+          if (!skippingRef.current) setMusicPlaying(false);
+        } else if (e.data === 0) {
+          // ENDED
+          setMusicPlaying(false);
+        }
+      };
 
-  // Playlist switch
-  useEffect(() => {
-    playlistRef.current = playlist;
-    if (playlist === "custom" && customVideoId) {
-      safe(() => playerRef.current?.loadVideoById(customVideoId));
-    } else {
-      const pl = PLAYLISTS.find((p) => p.id === playlist);
-      if (pl) {
-        safe(() => {
-          playerRef.current?.loadPlaylist({
-            listType: "playlist",
+      const onErrorHandler = (e: YTEvent) => {
+        if (e.data === 101 || e.data === 150) {
+          safe(() => playerRef.current?.nextVideo());
+        }
+      };
+
+      // 3. Initialize fresh player instance for target playlist
+      if (targetPlaylist === "custom" && targetCustomId) {
+        playerRef.current = new window.YT.Player("yt-engine-disc", {
+          height: "100%",
+          width: "100%",
+          videoId: targetCustomId,
+          playerVars: {
+            autoplay: autoPlay ? 1 : 0,
+            controls: 1,
+            disablekb: 1,
+            fs: 0,
+            rel: 0,
+            modestbranding: 1,
+            playsinline: 1,
+            enablejsapi: 1,
+            origin: typeof window !== "undefined" ? window.location.origin : "",
+          },
+          events: {
+            onReady: onReadyHandler,
+            onStateChange: onStateChangeHandler,
+            onError: onErrorHandler,
+          },
+        });
+      } else {
+        const pl = PLAYLISTS.find((p) => p.id === targetPlaylist) ?? PLAYLISTS[0];
+        playerRef.current = new window.YT.Player("yt-engine-disc", {
+          height: "100%",
+          width: "100%",
+          playerVars: {
             list: pl.youtubeListId,
-            index: 0,
-          });
-          if (playingRef.current) playerRef.current?.playVideo();
+            listType: "playlist",
+            autoplay: autoPlay ? 1 : 0,
+            controls: 1,
+            disablekb: 1,
+            fs: 0,
+            rel: 0,
+            modestbranding: 1,
+            playsinline: 1,
+            enablejsapi: 1,
+            origin: typeof window !== "undefined" ? window.location.origin : "",
+          },
+          events: {
+            onReady: onReadyHandler,
+            onStateChange: onStateChangeHandler,
+            onError: onErrorHandler,
+          },
         });
       }
+    },
+    [safe, setMusicPlaying, setNowPlayingTitle, setNowPlayingVideoId]
+  );
+
+  // Mount & Playlist Switching Effect:
+  // The moment user selects a different playlist, previous video is stopped/destroyed immediately
+  // and the new playlist starts loading and playing right away if interacted before
+  useEffect(() => {
+    const isInitial = prevPlaylistRef.current === null;
+    const playlistChanged = prevPlaylistRef.current !== playlist;
+    const customChanged = prevCustomIdRef.current !== customVideoId;
+
+    if (isInitial || playlistChanged || (playlist === "custom" && customChanged)) {
+      prevPlaylistRef.current = playlist;
+      prevCustomIdRef.current = customVideoId;
+
+      const shouldAutoPlay = !isInitial && (hasInteractedMusic || musicPlaying);
+
+      loadYTApi().then(() => {
+        initOrSwitchPlayer(playlist, customVideoId, shouldAutoPlay);
+      });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [playlist, customVideoId]);
+  }, [playlist, customVideoId, hasInteractedMusic, musicPlaying, initOrSwitchPlayer]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        playerRef.current?.stopVideo();
+        playerRef.current?.destroy();
+      } catch {}
+    };
+  }, []);
 
   // Mute
   useEffect(() => {
@@ -285,7 +346,7 @@ export default function YoutubePlayer() {
             </button>
           </div>
         )}
-        <div className="w-full h-full pt-7">
+        <div className="w-full h-full pt-7" ref={containerRef}>
           <div id="yt-engine-disc" className="w-full h-full" />
         </div>
       </div>
